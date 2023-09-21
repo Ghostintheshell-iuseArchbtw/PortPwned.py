@@ -1,4 +1,4 @@
-pimport os
+import os
 import chardet
 
 def analyze_binary_data(file_path, analysis_mode='all'):
