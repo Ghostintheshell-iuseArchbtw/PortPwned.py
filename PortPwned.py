@@ -138,15 +138,22 @@ def configure_iptables_with_ufw():
         subprocess.run(["apt", "update"], check=True)
         subprocess.run(["apt", "install", "ufw", "-y"], check=True)
 
-    # Enable UFW without prompting
-    subprocess.run(["ufw", "--force", "enable"], check=True)
-    subprocess.run(["ufw", "status"], check=True)
+    # Enable and start UFW
+    try:
+        subprocess.run(["ufw", "enable"], check=True, input="y\n", text=True)
+        subprocess.run(["ufw", "status"], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error enabling UFW: {e}")
 
-# Function to save the blacklisted IPs to a file
-def save_blacklisted_ips(file_path, ips):
-    with open(file_path, "w", encoding='utf-8') as file:
-        for ip in ips:
-            file.write(ip + "\n")
+# Function to display blacklisted IPs
+def display_blacklisted_ips(file_path):
+    blacklisted_ips = load_blacklisted_ips(file_path)
+    if blacklisted_ips:
+        print("Blacklisted IPs:")
+        for ip in blacklisted_ips:
+            print(ip)
+    else:
+        print("No blacklisted IPs found.")
 
 # Main function
 def main():
@@ -164,9 +171,10 @@ def main():
 
         # Check and configure iptables with UFW
         configure_iptables_with_ufw()
-        
-        # Other parts of your script...
-        
+
+        # Display blacklisted IPs
+        display_blacklisted_ips(config.get("Paths", "BLACKLIST_FILE"))
+
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
 
