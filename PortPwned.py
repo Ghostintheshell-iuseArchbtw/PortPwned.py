@@ -6,6 +6,7 @@ import logging
 import signal
 import sys
 import configparser
+from daemon import DaemonContext
 
 # Constants
 CONFIG_FILE_PATH = "/etc/script_config.ini"
@@ -16,6 +17,7 @@ SNORT_SERVICE_NAME = "snort.service"
 IPTABLES_SERVICE_NAME = "iptables.service"
 LOG_FILE_PATH = "/var/log/script_log.txt"
 WAIT_TIME_MINUTES = 30
+PACKAGES_INSTALLED_FLAG_FILE = "/var/log/packages_installed.flag"
 
 # Initialize configuration parser
 config = configparser.ConfigParser()
@@ -34,6 +36,30 @@ def create_config_file():
         }
         with open(CONFIG_FILE_PATH, 'w') as configfile:
             config.write(configfile)
+
+# Function to check if packages are already installed
+def are_packages_installed():
+    try:
+        subprocess.run(["dpkg", "-l", "package-name"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+# Function to download and configure packages
+def download_and_configure_packages():
+    if not os.path.exists(PACKAGES_INSTALLED_FLAG_FILE):
+        print("Packages are not installed. Installing...")
+        logging.info("Packages are not installed. Installing...")
+
+        # Create the directory for the flag file if it doesn't exist
+        flag_directory = os.path.dirname(PACKAGES_INSTALLED_FLAG_FILE)
+        os.makedirs(flag_directory, exist_ok=True)
+
+        subprocess.run(["apt", "update"], check=True)
+        subprocess.run(["apt", "install", "package-name", "-y"], check=True)
+
+        # Create the flag file to indicate that packages are installed
+        open(PACKAGES_INSTALLED_FLAG_FILE, 'a').close()
 
 # Function to gracefully stop services
 def stop_service(service_name):
@@ -105,27 +131,29 @@ def create_service_file(service_path, service_content):
 def configure_and_start_snort():
     # Check if Snort is installed
     if not os.path.exists("/usr/sbin/snort"):
+        print("Snort is not installed. Installing...")
         logging.info("Snort is not installed. Installing...")
         subprocess.run(["apt", "update"], check=True)
         subprocess.run(["apt", "install", "snort", "-y"], check=True)
 
     # Check if Snort service is enabled and running
     if not is_service_enabled_and_running(SNORT_SERVICE_NAME):
+        print("Snort is not running as a daemon. Configuring and starting...")
         logging.info("Snort is not running as a daemon. Configuring and starting...")
         # Configure Snort here
         snort_service_content = f"""
-[Unit]
-Description=Snort Intrusion Detection System
-After=network.target
+    [Unit]
+    Description=Snort Intrusion Detection System
+    After=network.target
 
-[Service]
-Type=simple
-ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
-Restart=always
+    [Service]
+    Type=simple
+    ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+    Restart=always
 
-[Install]
-WantedBy=multi-user.target
-"""
+    [Install]
+    WantedBy=multi-user.target
+    """
         create_service_file(f"/etc/systemd/system/{SNORT_SERVICE_NAME}", snort_service_content)
         subprocess.run(["systemctl", "enable", SNORT_SERVICE_NAME], check=True)
         subprocess.run(["systemctl", "start", SNORT_SERVICE_NAME], check=True)
@@ -134,45 +162,69 @@ WantedBy=multi-user.target
 def configure_iptables_with_ufw():
     # Check if UFW is installed
     if not os.path.exists("/usr/sbin/ufw"):
+        print("UFW is not installed. Installing...")
         logging.info("UFW is not installed. Installing...")
         subprocess.run(["apt", "update"], check=True)
         subprocess.run(["apt", "install", "ufw", "-y"], check=True)
 
-    # Enable UFW without prompting
-    subprocess.run(["ufw", "--force", "enable"], check=True)
-    subprocess.run(["ufw", "status"], check=True)
-
-# Function to save the blacklisted IPs to a file
-def save_blacklisted_ips(file_path, ips):
-    with open(file_path, "w", encoding='utf-8') as file:
-        for ip in ips:
-            file.write(ip + "\n")
-
-# Main function
-def main():
-    create_config_file()  # Create the config file if it doesn't exist
-
-    # Read configuration values from the config file
-    config.read(CONFIG_FILE_PATH)
-
-    global IP_PATTERN
-    IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
-
+    # Enable and start UFW
     try:
-        # Check and configure Snort
-        configure_and_start_snort()
+        subprocess.run(["ufw", "enable"], check=True, input="y\n", text=True)
+        subprocess.run(["ufw", "status"], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error enabling UFW: {e}")
 
-        # Check and configure iptables with UFW
-        configure_iptables_with_ufw()
-        
-        # Other parts of your script...
-        
-    except Exception as e:
-        logging.error(f"An error occurred: {str(e)}")
+# Function to display blacklisted IPs
+def display_blacklisted_ips(file_path):
+blacklisted_ips = load_blacklisted_ips(file_path)
+if blacklisted_ips:
+print(“Blacklisted IPs:”)
+for ip in blacklisted_ips:
+print(ip)
+else:
+print(“No blacklisted IPs found.”)
 
-if __name__ == "__main__":
-    signal.signal(signal.SIGINT, handle_termination)
-    while True:
+Main function
+
+def main():
+create_config_file()
+
+global IP_PATTERN
+IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
+
+try:
+    # Check if packages are installed, and install them if needed
+    download_and_configure_packages()
+
+    # Check and configure Snort
+    configure_and_start_snort()
+
+    # Check and configure iptables with UFW
+    configure_iptables_with_ufw()
+
+    # Display blacklisted IPs
+    display_blacklisted_ips(config.get("Paths", "BLACKLIST_FILE"))
+
+except Exception as e:
+    logging.error(f"An error occurred: {str(e)}")
+
+if name == “main”:
+signal.signal(signal.SIGINT, handle_termination)
+
+if not os.path.exists("/var/log/first_run.flag"):
+    with open("/var/log/first_run.flag", 'a'):
+        os.utime("/var/log/first_run.flag", None)
+    with DaemonContext():
         main()
+        script1_status = check_script1_status()
+        write_script1_health_status(script1_status)
         logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-        time.sleep(WAIT_TIME_MINUTES * 10)  # Convert to seconds
+        time.sleep(WAIT_TIME_MINUTES * 60)
+else:
+    with DaemonContext():
+        while True:
+            main()
+            script1_status = check_script1_status()
+            write_script1_health_status(script1_status)
+            logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
+            time.sleep(WAIT_TIME_MINUTES * 60)
