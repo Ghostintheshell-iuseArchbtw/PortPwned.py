@@ -142,18 +142,18 @@ def configure_and_start_snort():
         logging.info("Snort is not running as a daemon. Configuring and starting...")
         # Configure Snort here
         snort_service_content = f"""
-[Unit]
-Description=Snort Intrusion Detection System
-After=network.target
+    [Unit]
+    Description=Snort Intrusion Detection System
+    After=network.target
 
-[Service]
-Type=simple
-ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
-Restart=always
+    [Service]
+    Type=simple
+    ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+    Restart=always
 
-[Install]
-WantedBy=multi-user.target
-"""
+    [Install]
+    WantedBy=multi-user.target
+    """
         create_service_file(f"/etc/systemd/system/{SNORT_SERVICE_NAME}", snort_service_content)
         subprocess.run(["systemctl", "enable", SNORT_SERVICE_NAME], check=True)
         subprocess.run(["systemctl", "start", SNORT_SERVICE_NAME], check=True)
@@ -176,64 +176,55 @@ def configure_iptables_with_ufw():
 
 # Function to display blacklisted IPs
 def display_blacklisted_ips(file_path):
-    blacklisted_ips = load_blacklisted_ips(file_path)
-    if blacklisted_ips:
-        print("Blacklisted IPs:")
-        for ip in blacklisted_ips:
-            print(ip)
-    else:
-        print("No blacklisted IPs found.")
+blacklisted_ips = load_blacklisted_ips(file_path)
+if blacklisted_ips:
+print(“Blacklisted IPs:”)
+for ip in blacklisted_ips:
+print(ip)
+else:
+print(“No blacklisted IPs found.”)
 
-# Main function
+Main function
+
 def main():
-    create_config_file()  # Create the config file if it doesn't exist
+create_config_file()
 
-    # Read configuration values from the config file
-    config.read(CONFIG_FILE_PATH)
+global IP_PATTERN
+IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
 
-    global IP_PATTERN
-    IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
+try:
+    # Check if packages are installed, and install them if needed
+    download_and_configure_packages()
 
-    try:
-        # Check if packages are installed, and install them if needed
-        download_and_configure_packages()
+    # Check and configure Snort
+    configure_and_start_snort()
 
-        # Check and configure Snort
-        configure_and_start_snort()
+    # Check and configure iptables with UFW
+    configure_iptables_with_ufw()
 
-        # Check and configure iptables with UFW
-        configure_iptables_with_ufw()
+    # Display blacklisted IPs
+    display_blacklisted_ips(config.get("Paths", "BLACKLIST_FILE"))
 
-        # Display blacklisted IPs
-        display_blacklisted_ips(config.get("Paths", "BLACKLIST_FILE"))
+except Exception as e:
+    logging.error(f"An error occurred: {str(e)}")
 
-    except Exception as e:
-        logging.error(f"An error occurred: {str(e)}")
+if name == “main”:
+signal.signal(signal.SIGINT, handle_termination)
 
-if __name__ == "__main__":
-    signal.signal(signal.SIGINT, handle_termination)
-
-    # Check if it's the first run (not a systemd restart)
-    if not os.path.exists("/var/log/first_run.flag"):
-        with open("/var/log/first_run.flag", 'a'):
-            os.utime("/var/log/first_run.flag", None)
-        with DaemonContext():
+if not os.path.exists("/var/log/first_run.flag"):
+    with open("/var/log/first_run.flag", 'a'):
+        os.utime("/var/log/first_run.flag", None)
+    with DaemonContext():
+        main()
+        script1_status = check_script1_status()
+        write_script1_health_status(script1_status)
+        logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
+        time.sleep(WAIT_TIME_MINUTES * 60)
+else:
+    with DaemonContext():
+        while True:
             main()
+            script1_status = check_script1_status()
+            write_script1_health_status(script1_status)
             logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-            time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds
-    else:
-        with DaemonContext():
-            while True:
-                main()
-                logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-                time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds                     
-
-                        #In this version of the script:
-
-#- The script is wrapped in a `DaemonContext` to run as a daemon.
-#- It checks for the existence of a flag file (`first_run.flag`) to determine 
-# if it's the first run (not a systemd restart). If it's the first run, it creates the flag file and runs the main function. 
-# Otherwise, it directly enters the loop to run as a daemon.
-#- Logging is made more verbose with print statements.
-#especially during the installation of packages and services.
-# Make sure to replace `"package-name"` with the actual name of the package you want to install.
+            time.sleep(WAIT_TIME_MINUTES * 60)
