@@ -75,6 +75,16 @@ def is_script_log_file_ok():
             error_file.write(f"Error accessing log file: {str(e)}\n")
         return False
 
+def print_blacklisted_ips():
+    blacklisted_ips_path = "/etc/blacklisted_ips.txt"
+    try:
+        with open(blacklisted_ips_path, "r") as file:
+            for line in file:
+                ip = line.strip()
+                print(f"{ip} has been PortPwned")
+    except FileNotFoundError:
+        pass
+
 # Specify the path to your Snort alerts log file
 log_file_path = "/var/log/snort/snort.alert.fast"
 
@@ -87,6 +97,9 @@ for entry in parsed_entries:
     print("Rule Information:", entry['rule_info'])
     print("Classification:", entry['classification'])
     print("=" * 50)  # Separating lines for readability
+
+# Print blacklisted IPs and their status
+print_blacklisted_ips()
 
 # Check the other conditions and report PortPwned status
 if (
