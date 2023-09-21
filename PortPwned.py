@@ -142,18 +142,18 @@ def configure_and_start_snort():
         logging.info("Snort is not running as a daemon. Configuring and starting...")
         # Configure Snort here
         snort_service_content = f"""
-    [Unit]
-    Description=Snort Intrusion Detection System
-    After=network.target
+[Unit]
+Description=Snort Intrusion Detection System
+After=network.target
 
-    [Service]
-    Type=simple
-    ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
-    Restart=always
+[Service]
+Type=simple
+ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+Restart=always
 
-    [Install]
-    WantedBy=multi-user.target
-    """
+[Install]
+WantedBy=multi-user.target
+"""
         create_service_file(f"/etc/systemd/system/{SNORT_SERVICE_NAME}", snort_service_content)
         subprocess.run(["systemctl", "enable", SNORT_SERVICE_NAME], check=True)
         subprocess.run(["systemctl", "start", SNORT_SERVICE_NAME], check=True)
@@ -172,9 +172,10 @@ def configure_iptables_with_ufw():
         subprocess.run(["ufw", "enable"], check=True, input="y\n", text=True)
         subprocess.run(["ufw", "status"], check=True)
     except subprocess.CalledProcessError as e:
-        logging.error(f"Error enabling UFW: {e}")
+        logging.error(f"Error enabling UFW: {e}”)
 
-# Function to display blacklisted IPs
+Function to display blacklisted IPs
+
 def display_blacklisted_ips(file_path):
 blacklisted_ips = load_blacklisted_ips(file_path)
 if blacklisted_ips:
@@ -184,10 +185,28 @@ print(ip)
 else:
 print(“No blacklisted IPs found.”)
 
+Health check for Script 1
+
+def check_script1_status():
+packages_installed = are_packages_installed()
+snort_running = is_service_enabled_and_running(SNORT_SERVICE_NAME)
+ufw_enabled = is_service_enabled_and_running(“ufw”)
+log_file_ok = is_script_log_file_ok()
+
+return {
+    "Packages Installed": packages_installed,
+    "Snort Running": snort_running,
+    "UFW Enabled": ufw_enabled,
+    "Log File OK": log_file_ok,
+}
+
 Main function
 
 def main():
-create_config_file()
+create_config_file()  # Create the config file if it doesn’t exist
+
+# Read configuration values from the config file
+config.read(CONFIG_FILE_PATH)
 
 global IP_PATTERN
 IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
@@ -211,6 +230,7 @@ except Exception as e:
 if name == “main”:
 signal.signal(signal.SIGINT, handle_termination)
 
+# Check if it's the first run (not a systemd restart)
 if not os.path.exists("/var/log/first_run.flag"):
     with open("/var/log/first_run.flag", 'a'):
         os.utime("/var/log/first_run.flag", None)
@@ -219,7 +239,7 @@ if not os.path.exists("/var/log/first_run.flag"):
         script1_status = check_script1_status()
         write_script1_health_status(script1_status)
         logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-        time.sleep(WAIT_TIME_MINUTES * 60)
+        time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds
 else:
     with DaemonContext():
         while True:
@@ -227,4 +247,4 @@ else:
             script1_status = check_script1_status()
             write_script1_health_status(script1_status)
             logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-            time.sleep(WAIT_TIME_MINUTES * 60)
+            time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds
