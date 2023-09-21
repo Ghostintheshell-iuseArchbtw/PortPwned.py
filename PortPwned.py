@@ -1,19 +1,21 @@
+import os
 import re
 import subprocess
 import time
 
-# Define the path to the Snort log file
+# Define paths
 snort_log_path = "/path/to/snort.log"
-
-# Define the path to the file where you want to keep track of banned IPs
 blacklist_file = "blacklisted_ips.txt"
+script_service_name = "my_script.service"
+snort_service_name = "snort.service"
+iptables_service_name = "iptables.service"
 
 # Regular expression pattern for matching IP addresses in Snort logs
 ip_pattern = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
 
 # Function to parse Snort logs and find offending IPs
 def parse_snort_logs():
-    offending_ips = set()  # Use a set to avoid duplicate IPs
+    offending_ips = set()
     with open(snort_log_path, "r") as log_file:
         for line in log_file:
             match = ip_pattern.search(line)
@@ -35,14 +37,54 @@ def load_blacklisted_ips(file_path):
 
 # Function to blacklist an IP using iptables
 def blacklist_ip(ip):
-    # Use subprocess to run iptables command
     try:
         subprocess.run(["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"], check=True)
         print(f"IP {ip} has been blacklisted.")
     except subprocess.CalledProcessError as e:
         print(f"Error blacklisting IP {ip}: {e}")
 
-# Main function to perform parsing and blacklisting
+# Function to configure and start Snort in daemon mode
+def configure_and_start_snort():
+    # Check if Snort is installed
+    if not os.path.exists("/usr/sbin/snort"):
+        print("Snort is not installed. Installing...")
+        # Install Snort using apt
+        subprocess.run(["apt", "update"], check=True)
+        subprocess.run(["apt", "install", "snort", "-y"], check=True)
+
+    # Check if Snort service is enabled and running
+    if not is_service_running(snort_service_name):
+        print("Snort is not running as a daemon. Configuring and starting...")
+        # Configure Snort here, e.g., by copying the configuration files
+        # Start Snort as a daemon
+        subprocess.run(["systemctl", "start", snort_service_name], check=True)
+
+# Function to configure iptables and set firewall rules
+def configure_iptables():
+    # Check if iptables is installed
+    if not os.path.exists("/sbin/iptables"):
+        print("iptables is not installed. Installing...")
+        # Install iptables using apt
+        subprocess.run(["apt", "update"], check=True)
+        subprocess.run(["apt", "install", "iptables", "-y"], check=True)
+
+    # Check if iptables service is enabled and running
+    if not is_service_running(iptables_service_name):
+        print("iptables is not running as a daemon. Configuring and starting...")
+        # Configure iptables rules here
+        # Example: subprocess.run(["iptables-restore", "/etc/iptables/rules.v4"], check=True)
+        # Start iptables service
+        subprocess.run(["systemctl", "start", iptables_service_name], check=True)
+
+# Function to check if a systemd service is running
+def is_service_running(service_name):
+    try:
+        subprocess.run(["systemctl", "is-active", "--quiet", service_name], check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+# Main function
 def main():
     try:
         # Load previously blacklisted IPs
@@ -60,6 +102,12 @@ def main():
 
         # Save the updated list of blacklisted IPs
         save_blacklisted_ips(blacklist_file, blacklisted_ips)
+
+        # Configure and start Snort if needed
+        configure_and_start_snort()
+
+        # Configure iptables if needed
+        configure_iptables()
     except Exception as e:
         print(f"An error occurred: {str(e)}")
 
@@ -70,7 +118,7 @@ def save_blacklisted_ips(file_path, ips):
             file.write(ip + "\n")
 
 if __name__ == "__main__":
-    # Run the script every 2 hours (adjust timing as needed)
+    # Run the script every 30 minutes
     while True:
         main()
-        time.sleep(2 * 60 * 60)  # Sleep for 2 hours
+        time.sleep(30 * 60)  # Sleep for 30 minutes
