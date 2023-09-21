@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 import subprocess
 
+# Function to parse Snort log entries
 def parse_snort_log(log_file_path):
     parsed_entries = []
 
@@ -19,6 +20,7 @@ def parse_snort_log(log_file_path):
 
     return parsed_entries
 
+# Function to parse a single log entry
 def parse_log_entry(log_entry):
     entry_pattern = re.compile(r"^\[(.*?)\]\s*\[.*?\]\s*\[(.*?)\]\s*(.*)$")
     match = entry_pattern.match(log_entry)
@@ -34,12 +36,14 @@ def parse_log_entry(log_entry):
     
     return None
 
+# Function to parse a timestamp string
 def parse_timestamp(timestamp_str):
     try:
         return datetime.strptime(timestamp_str, "%m/%d-%H:%M:%S.%f")
     except ValueError:
         return None
 
+# Function to check if Snort is running
 def is_snort_running():
     try:
         result = subprocess.run(["systemctl", "is-active", "--quiet", "snort.service"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -47,6 +51,7 @@ def is_snort_running():
     except subprocess.CalledProcessError:
         return False
 
+# Function to check if blacklisted IPs exist
 def has_blacklisted_ips():
     try:
         blacklisted_ips_path = "/etc/blacklisted_ips.txt"
@@ -55,6 +60,7 @@ def has_blacklisted_ips():
     except FileNotFoundError:
         return False
 
+# Function to check if iptables rules exist
 def has_iptables_rules():
     try:
         result = subprocess.run(["iptables", "-L"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -63,6 +69,7 @@ def has_iptables_rules():
     except subprocess.CalledProcessError:
         return False
 
+# Function to check if the script log file is accessible
 def is_script_log_file_ok():
     script_log_path = "/var/log/script_log.txt"
     try:
@@ -75,6 +82,7 @@ def is_script_log_file_ok():
             error_file.write(f"Error accessing log file: {str(e)}\n")
         return False
 
+# Function to print blacklisted IPs
 def print_blacklisted_ips():
     blacklisted_ips_path = "/etc/blacklisted_ips.txt"
     try:
@@ -101,7 +109,7 @@ for entry in parsed_entries:
 # Print blacklisted IPs and their status
 print_blacklisted_ips()
 
-# Check the other conditions and report PortPwned status
+# Check the conditions and report PortPwned status
 if (
     is_snort_running() and
     has_blacklisted_ips() and
