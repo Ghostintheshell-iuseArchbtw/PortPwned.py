@@ -1,22 +1,53 @@
-# Define a function to parse and format Snort alerts
-def parse_snort_log(log_file):
-    with open(log_file, 'r') as file:
-        lines = file.readlines()
+import re
+from datetime import datetime
 
-    for line in lines:
-        parts = line.split('[**]')
-        if len(parts) >= 3:
-            timestamp = parts[0].strip()
-            rule_info = parts[1].strip()
-            classification = parts[2].strip()
+def parse_snort_log(log_file_path):
+    parsed_entries = []
 
-            print(f"Timestamp: {timestamp}")
-            print(f"Rule Information: {rule_info}")
-            print(f"Classification: {classification}")
-            print("=" * 50)  # Separating lines for readability
+    try:
+        with open(log_file_path, 'r') as log_file:
+            for line in log_file:
+                entry = parse_log_entry(line)
+                if entry:
+                    parsed_entries.append(entry)
+    except FileNotFoundError:
+        print(f"File not found: {log_file_path}")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+
+    return parsed_entries
+
+def parse_log_entry(log_entry):
+    entry_pattern = re.compile(r"^\[(.*?)\]\s*\[.*?\]\s*\[(.*?)\]\s*(.*)$")
+    match = entry_pattern.match(log_entry)
+    
+    if match:
+        timestamp_str, rule_info, classification = match.groups()
+        timestamp = parse_timestamp(timestamp_str)
+        return {
+            'timestamp': timestamp,
+            'rule_info': rule_info.strip(),
+            'classification': classification.strip()
+        }
+    
+    return None
+
+def parse_timestamp(timestamp_str):
+    try:
+        return datetime.strptime(timestamp_str, "%m/%d-%H:%M:%S.%f")
+    except ValueError:
+        # Handle parsing error, return None or raise an exception as needed
+        return None
 
 # Specify the path to your Snort alerts log file
-log_file_path = "path/to/your/snort.alert.fast"
+log_file_path = "/var/log/snort/snort.alert.fast"
 
-# Call the function to parse and print the log
-parse_snort_log(log_file_path)
+# Call the function to parse the log
+parsed_entries = parse_snort_log(log_file_path)
+
+# Print the parsed entries
+for entry in parsed_entries:
+    print("Timestamp:", entry['timestamp'])
+    print("Rule Information:", entry['rule_info'])
+    print("Classification:", entry['classification'])
+    print("=" * 50)  # Separating lines for readability
