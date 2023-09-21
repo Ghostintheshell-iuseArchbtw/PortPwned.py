@@ -9,6 +9,11 @@ import configparser
 
 # Constants
 CONFIG_FILE_PATH = "/etc/script_config.ini"
+SNORT_LOG_PATH = "/var/log/snort/snort.log"
+BLACKLIST_FILE = "/etc/blacklisted_ips.txt"
+SCRIPT_SERVICE_NAME = "my_script.service"
+SNORT_SERVICE_NAME = "snort.service"
+IPTABLES_SERVICE_NAME = "iptables.service"
 LOG_FILE_PATH = "/var/log/script_log.txt"
 WAIT_TIME_MINUTES = 30
 
@@ -19,13 +24,13 @@ config = configparser.ConfigParser()
 def create_config_file():
     if not os.path.exists(CONFIG_FILE_PATH):
         config['Paths'] = {
-            'SNORT_LOG_PATH': '/var/log/snort/snort.log',
-            'BLACKLIST_FILE': '/etc/blacklisted_ips.txt',
+            'SNORT_LOG_PATH': SNORT_LOG_PATH,
+            'BLACKLIST_FILE': BLACKLIST_FILE,
         }
         config['Services'] = {
-            'SCRIPT_SERVICE_NAME': 'my_script.service',
-            'SNORT_SERVICE_NAME': 'snort',
-            'IPTABLES_SERVICE_NAME': 'iptables',
+            'SCRIPT_SERVICE_NAME': SCRIPT_SERVICE_NAME,
+            'SNORT_SERVICE_NAME': SNORT_SERVICE_NAME,
+            'IPTABLES_SERVICE_NAME': IPTABLES_SERVICE_NAME,
         }
         with open(CONFIG_FILE_PATH, 'w') as configfile:
             config.write(configfile)
@@ -49,8 +54,9 @@ def handle_termination(signal, frame):
 def parse_snort_logs():
     offending_ips = set()
     try:
-        with open(SNORT_LOG_PATH, "r") as log_file:
+        with open(SNORT_LOG_PATH, "rb") as log_file:
             for line in log_file:
+                line = line.decode('utf-8', errors='ignore')
                 match = IP_PATTERN.search(line)
                 if match:
                     ip = match.group(1)
@@ -63,11 +69,13 @@ def parse_snort_logs():
 def load_blacklisted_ips(file_path):
     blacklisted_ips = set()
     try:
-        with open(file_path, "r") as file:
+        with open(file_path, "r", encoding='utf-8') as file:
             for line in file:
                 blacklisted_ips.add(line.strip())
     except FileNotFoundError:
         pass
+    except UnicodeDecodeError:
+        logging.error(f"Error decoding file at {file_path}")
     return blacklisted_ips
 
 # Function to blacklist an IP using iptables
@@ -78,13 +86,20 @@ def blacklist_ip(ip):
     except subprocess.CalledProcessError as e:
         logging.error(f"Error blacklisting IP {ip}: {e}")
 
-# Function to check if a systemd service is running
-def is_service_running(service_name):
+# Function to check if a systemd service is enabled and running
+def is_service_enabled_and_running(service_name):
     try:
         subprocess.run(["systemctl", "is-active", "--quiet", service_name], check=True)
+        subprocess.run(["systemctl", "is-enabled", "--quiet", service_name], check=True)
         return True
     except subprocess.CalledProcessError:
         return False
+
+# Function to create a systemd service file if it doesn't exist
+def create_service_file(service_path, service_content):
+    if not os.path.exists(service_path):
+        with open(service_path, 'w') as service_file:
+            service_file.write(service_content)
 
 # Function to configure and start Snort in daemon mode
 def configure_and_start_snort():
@@ -95,30 +110,50 @@ def configure_and_start_snort():
         subprocess.run(["apt", "install", "snort", "-y"], check=True)
 
     # Check if Snort service is enabled and running
-    if not is_service_running(SNORT_SERVICE_NAME):
+    if not is_service_enabled_and_running(SNORT_SERVICE_NAME):
         logging.info("Snort is not running as a daemon. Configuring and starting...")
         # Configure Snort here
+        snort_service_content = f"""
+[Unit]
+Description=Snort Intrusion Detection System
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+"""
+        create_service_file(f"/etc/systemd/system/{SNORT_SERVICE_NAME}", snort_service_content)
+        subprocess.run(["systemctl", "enable", SNORT_SERVICE_NAME], check=True)
         subprocess.run(["systemctl", "start", SNORT_SERVICE_NAME], check=True)
 
-# Function to configure iptables and set firewall rules
-def configure_iptables():
-    # Check if iptables is installed
-    if not os.path.exists("/sbin/iptables"):
-        logging.info("iptables is not installed. Installing...")
+# Function to configure iptables using UFW
+def configure_iptables_with_ufw():
+    # Check if UFW is installed
+    if not os.path.exists("/usr/sbin/ufw"):
+        logging.info("UFW is not installed. Installing...")
         subprocess.run(["apt", "update"], check=True)
-        subprocess.run(["apt", "install", "iptables", "-y"], check=True)
+        subprocess.run(["apt", "install", "ufw", "-y"], check=True)
 
-    # Check if iptables service is enabled and running
-    if not is_service_running(IPTABLES_SERVICE_NAME):
-        logging.info("iptables is not running as a daemon. Configuring and starting...")
-        # Configure iptables rules here
-        subprocess.run(["systemctl", "start", IPTABLES_SERVICE_NAME], check=True)
+    # Enable and start UFW
+    try:
+        subprocess.run(["ufw", "enable"], check=True, input="y\n", text=True)
+        subprocess.run(["ufw", "status"], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error enabling UFW: {e}")
 
-# Function to save the blacklisted IPs to a file
-def save_blacklisted_ips(file_path, ips):
-    with open(file_path, "w") as file:
-        for ip in ips:
-            file.write(ip + "\n")
+# Function to display blacklisted IPs
+def display_blacklisted_ips(file_path):
+    blacklisted_ips = load_blacklisted_ips(file_path)
+    if blacklisted_ips:
+        print("Blacklisted IPs:")
+        for ip in blacklisted_ips:
+            print(ip)
+    else:
+        print("No blacklisted IPs found.")
 
 # Main function
 def main():
@@ -127,39 +162,19 @@ def main():
     # Read configuration values from the config file
     config.read(CONFIG_FILE_PATH)
 
-    global SNORT_LOG_PATH
-    SNORT_LOG_PATH = config.get("Paths", "SNORT_LOG_PATH")
-    global BLACKLIST_FILE
-    BLACKLIST_FILE = config.get("Paths", "BLACKLIST_FILE")
-    global SCRIPT_SERVICE_NAME
-    SCRIPT_SERVICE_NAME = config.get("Services", "SCRIPT_SERVICE_NAME")
-    global SNORT_SERVICE_NAME
-    SNORT_SERVICE_NAME = config.get("Services", "SNORT_SERVICE_NAME")
-    global IPTABLES_SERVICE_NAME
-    IPTABLES_SERVICE_NAME = config.get("Services", "IPTABLES_SERVICE_NAME")
+    global IP_PATTERN
+    IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
 
     try:
-        # Load previously blacklisted IPs
-        blacklisted_ips = load_blacklisted_ips(BLACKLIST_FILE)
-
-        # Parse Snort logs
-        offending_ips = parse_snort_logs()
-
-        # Check for new offending IPs and blacklist them
-        for ip in offending_ips:
-            if ip not in blacklisted_ips:
-                logging.info(f"Blacklisting IP: {ip}")
-                blacklist_ip(ip)
-                blacklisted_ips.add(ip)
-
-        # Save the updated list of blacklisted IPs
-        save_blacklisted_ips(BLACKLIST_FILE, blacklisted_ips)
-
-        # Configure and start Snort if needed
+        # Check and configure Snort
         configure_and_start_snort()
 
-        # Configure iptables if needed
-        configure_iptables()
+        # Check and configure iptables with UFW
+        configure_iptables_with_ufw()
+
+        # Display blacklisted IPs
+        display_blacklisted_ips(config.get("Paths", "BLACKLIST_FILE"))
+
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
 
@@ -168,4 +183,4 @@ if __name__ == "__main__":
     while True:
         main()
         logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-        time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds
+        time.sleep(WAIT_TIME_MINUTES * 10)  # Convert to seconds
