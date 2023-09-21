@@ -5,26 +5,30 @@ import time
 import logging
 import signal
 import sys
+import configparser
 
 # Constants
-SNORT_LOG_PATH = "/var/log/snort/snort.log"
-BLACKLIST_FILE = "/etc/blacklisted_ips.txt"
-SCRIPT_SERVICE_NAME = "my_script.service"
-SNORT_SERVICE_NAME = "snort"
-IPTABLES_SERVICE_NAME = "iptables"
+CONFIG_FILE_PATH = "/etc/script_config.ini"
 LOG_FILE_PATH = "/var/log/script_log.txt"
 WAIT_TIME_MINUTES = 30
 
-# Regular expression pattern for matching IP addresses in Snort logs
-IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
+# Initialize configuration parser
+config = configparser.ConfigParser()
 
-# Configure logging
-logging.basicConfig(
-    filename=LOG_FILE_PATH,
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+# Function to create the configuration file with a template if it doesn't exist
+def create_config_file():
+    if not os.path.exists(CONFIG_FILE_PATH):
+        config['Paths'] = {
+            'SNORT_LOG_PATH': '/var/log/snort/snort.log',
+            'BLACKLIST_FILE': '/etc/blacklisted_ips.txt',
+        }
+        config['Services'] = {
+            'SCRIPT_SERVICE_NAME': 'my_script.service',
+            'SNORT_SERVICE_NAME': 'snort',
+            'IPTABLES_SERVICE_NAME': 'iptables',
+        }
+        with open(CONFIG_FILE_PATH, 'w') as configfile:
+            config.write(configfile)
 
 # Function to gracefully stop services
 def stop_service(service_name):
@@ -118,6 +122,22 @@ def save_blacklisted_ips(file_path, ips):
 
 # Main function
 def main():
+    create_config_file()  # Create the config file if it doesn't exist
+
+    # Read configuration values from the config file
+    config.read(CONFIG_FILE_PATH)
+
+    global SNORT_LOG_PATH
+    SNORT_LOG_PATH = config.get("Paths", "SNORT_LOG_PATH")
+    global BLACKLIST_FILE
+    BLACKLIST_FILE = config.get("Paths", "BLACKLIST_FILE")
+    global SCRIPT_SERVICE_NAME
+    SCRIPT_SERVICE_NAME = config.get("Services", "SCRIPT_SERVICE_NAME")
+    global SNORT_SERVICE_NAME
+    SNORT_SERVICE_NAME = config.get("Services", "SNORT_SERVICE_NAME")
+    global IPTABLES_SERVICE_NAME
+    IPTABLES_SERVICE_NAME = config.get("Services", "IPTABLES_SERVICE_NAME")
+
     try:
         # Load previously blacklisted IPs
         blacklisted_ips = load_blacklisted_ips(BLACKLIST_FILE)
