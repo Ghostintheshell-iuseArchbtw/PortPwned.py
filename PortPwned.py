@@ -6,6 +6,7 @@ import logging
 import signal
 import sys
 import configparser
+from daemon import DaemonContext
 
 # Constants
 CONFIG_FILE_PATH = "/etc/script_config.ini"
@@ -16,6 +17,7 @@ SNORT_SERVICE_NAME = "snort.service"
 IPTABLES_SERVICE_NAME = "iptables.service"
 LOG_FILE_PATH = "/var/log/script_log.txt"
 WAIT_TIME_MINUTES = 30
+PACKAGES_INSTALLED_FLAG_FILE = "/var/log/packages_installed.flag"
 
 # Initialize configuration parser
 config = configparser.ConfigParser()
@@ -34,6 +36,30 @@ def create_config_file():
         }
         with open(CONFIG_FILE_PATH, 'w') as configfile:
             config.write(configfile)
+
+# Function to check if packages are already installed
+def are_packages_installed():
+    try:
+        subprocess.run(["dpkg", "-l", "package-name"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+# Function to download and configure packages
+def download_and_configure_packages():
+    if not os.path.exists(PACKAGES_INSTALLED_FLAG_FILE):
+        print("Packages are not installed. Installing...")
+        logging.info("Packages are not installed. Installing...")
+
+        # Create the directory for the flag file if it doesn't exist
+        flag_directory = os.path.dirname(PACKAGES_INSTALLED_FLAG_FILE)
+        os.makedirs(flag_directory, exist_ok=True)
+
+        subprocess.run(["apt", "update"], check=True)
+        subprocess.run(["apt", "install", "package-name", "-y"], check=True)
+
+        # Create the flag file to indicate that packages are installed
+        open(PACKAGES_INSTALLED_FLAG_FILE, 'a').close()
 
 # Function to gracefully stop services
 def stop_service(service_name):
@@ -105,12 +131,14 @@ def create_service_file(service_path, service_content):
 def configure_and_start_snort():
     # Check if Snort is installed
     if not os.path.exists("/usr/sbin/snort"):
+        print("Snort is not installed. Installing...")
         logging.info("Snort is not installed. Installing...")
         subprocess.run(["apt", "update"], check=True)
         subprocess.run(["apt", "install", "snort", "-y"], check=True)
 
     # Check if Snort service is enabled and running
     if not is_service_enabled_and_running(SNORT_SERVICE_NAME):
+        print("Snort is not running as a daemon. Configuring and starting...")
         logging.info("Snort is not running as a daemon. Configuring and starting...")
         # Configure Snort here
         snort_service_content = f"""
@@ -134,6 +162,7 @@ WantedBy=multi-user.target
 def configure_iptables_with_ufw():
     # Check if UFW is installed
     if not os.path.exists("/usr/sbin/ufw"):
+        print("UFW is not installed. Installing...")
         logging.info("UFW is not installed. Installing...")
         subprocess.run(["apt", "update"], check=True)
         subprocess.run(["apt", "install", "ufw", "-y"], check=True)
@@ -166,6 +195,9 @@ def main():
     IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
 
     try:
+        # Check if packages are installed, and install them if needed
+        download_and_configure_packages()
+
         # Check and configure Snort
         configure_and_start_snort()
 
@@ -180,7 +212,28 @@ def main():
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_termination)
-    while True:
-        main()
-        logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-        time.sleep(WAIT_TIME_MINUTES * 10)  # Convert to seconds
+
+    # Check if it's the first run (not a systemd restart)
+    if not os.path.exists("/var/log/first_run.flag"):
+        with open("/var/log/first_run.flag", 'a'):
+            os.utime("/var/log/first_run.flag", None)
+        with DaemonContext():
+            main()
+            logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
+            time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds
+    else:
+        with DaemonContext():
+            while True:
+                main()
+                logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
+                time.sleep(WAIT_TIME_MINUTES * 60)  # Convert to seconds                     
+
+                        #In this version of the script:
+
+#- The script is wrapped in a `DaemonContext` to run as a daemon.
+#- It checks for the existence of a flag file (`first_run.flag`) to determine 
+# if it's the first run (not a systemd restart). If it's the first run, it creates the flag file and runs the main function. 
+# Otherwise, it directly enters the loop to run as a daemon.
+#- Logging is made more verbose with print statements.
+#especially during the installation of packages and services.
+# Make sure to replace `"package-name"` with the actual name of the package you want to install.
