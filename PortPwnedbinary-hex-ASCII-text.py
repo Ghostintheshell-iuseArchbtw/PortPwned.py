@@ -1,24 +1,64 @@
-import os
+pimport os
+import chardet
 
-def analyze_binary_data(file_path):
+def analyze_binary_data(file_path, analysis_mode='all'):
     try:
+        # Check if the file exists
+        if not os.path.isfile(file_path):
+            print(f"File not found: {file_path}")
+            return
+
         with open(file_path, 'rb') as binary_file:
             data = binary_file.read()
+
+            if analysis_mode == 'info':
+                print(f"File Information:")
+                display_file_info(file_path, data)
+
+            if analysis_mode == 'stats' or analysis_mode == 'all':
+                print(f"Byte Statistics:")
+                display_byte_statistics(data)
+
             hex_representation = data.hex().upper()  # Convert binary data to hexadecimal
-            print("Hexadecimal representation of binary data:")
+            print("\nHexadecimal representation of binary data:")
             print(hex_representation)
-            
-            # Attempt to find repeating patterns (4-byte sequences) in the hexadecimal data
-            find_repeating_patterns(hex_representation)
-            
-            # Convert binary data to ASCII
-            ascii_data = data.decode('ascii', errors='replace')
-            print("\nASCII representation of the data:")
-            print(ascii_data)
-    except FileNotFoundError:
-        print(f"File not found: {file_path}")
+
+            if analysis_mode == 'all' or analysis_mode == 'repeating':
+                # Attempt to find repeating patterns (4-byte sequences) in the hexadecimal data
+                find_repeating_patterns(hex_representation)
+
+            if analysis_mode == 'all' or analysis_mode == 'ascii':
+                # Convert binary data to ASCII
+                ascii_data = data.decode('ascii', errors='replace')
+                print("\nASCII representation of the data:")
+                print(interpret_ascii_data(ascii_data))
+
+            if analysis_mode == 'all' or analysis_mode == 'encoding':
+                # Detect encoding using chardet
+                encoding_result = chardet.detect(data)
+                detected_encoding = encoding_result['encoding']
+                print(f"Detected encoding: {detected_encoding}")
+
     except Exception as e:
         print(f"An error occurred: {str(e)}")
+
+def display_file_info(file_path, data):
+    file_size = len(data)
+    print(f"File Path: {file_path}")
+    print(f"File Size: {file_size} bytes")
+
+def display_byte_statistics(data):
+    byte_counts = {}
+    for byte in data:
+        byte_hex = format(byte, '02X')  # Convert byte to uppercase hexadecimal
+        if byte_hex in byte_counts:
+            byte_counts[byte_hex] += 1
+        else:
+            byte_counts[byte_hex] = 1
+
+    print("Byte Statistics:")
+    for byte_hex, count in byte_counts.items():
+        print(f"Byte: 0x{byte_hex} | Count: {count}")
 
 def find_repeating_patterns(hex_data):
     print("\nRepeating 4-byte patterns:")
@@ -43,5 +83,6 @@ def interpret_ascii_data(ascii_data):
     return printable_data
 
 if __name__ == "__main__":
-    file_path = "/var/log/snort/snort.alert"  # Replace with the path to your binary file
-    analyze_binary_data(file_path)
+    file_path = input("Enter the path to your binary file: ")  # Prompt the user for the binary file path
+    analysis_mode = input("Choose analysis mode ('all', 'info', 'stats', 'repeating', 'ascii', 'encoding'): ").lower()
+    analyze_binary_data(file_path, analysis_mode)
