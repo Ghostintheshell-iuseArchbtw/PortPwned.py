@@ -3,7 +3,10 @@ from datetime import datetime
 import os
 import subprocess
 
-# Function to parse Snort log entries
+# Constants
+log_file_path = "/var/log/snort/snort.alert.fast"
+
+# Function to parse Snort logs and find offending IPs
 def parse_snort_log(log_file_path):
     parsed_entries = []
 
@@ -20,7 +23,7 @@ def parse_snort_log(log_file_path):
 
     return parsed_entries
 
-# Function to parse a single log entry
+# Function to parse a log entry
 def parse_log_entry(log_entry):
     entry_pattern = re.compile(r"^\[(.*?)\]\s*\[.*?\]\s*\[(.*?)\]\s*(.*)$")
     match = entry_pattern.match(log_entry)
@@ -36,7 +39,7 @@ def parse_log_entry(log_entry):
     
     return None
 
-# Function to parse a timestamp string
+# Function to parse a timestamp
 def parse_timestamp(timestamp_str):
     try:
         return datetime.strptime(timestamp_str, "%m/%d-%H:%M:%S.%f")
@@ -60,7 +63,7 @@ def has_blacklisted_ips():
     except FileNotFoundError:
         return False
 
-# Function to check if iptables rules exist
+# Function to check if iptables rules are configured
 def has_iptables_rules():
     try:
         result = subprocess.run(["iptables", "-L"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -73,49 +76,50 @@ def has_iptables_rules():
 def is_script_log_file_ok():
     script_log_path = "/var/log/script_log.txt"
     try:
-        # Check if the log file is accessible
         with open(script_log_path, "a") as _:
             pass
         return True
     except Exception as e:
         with open("/root/error.txt", "a") as error_file:
-            error_file.write(f"Error accessing log file: {str(e)}\n")
+            error_file.write(str(e) + "\n")
         return False
 
-# Function to print blacklisted IPs
-def print_blacklisted_ips():
-    blacklisted_ips_path = "/etc/blacklisted_ips.txt"
+# Function to write the health status to a file
+def write_script2_health_status(status):
+    with open("/var/log/script2_health.txt", "w") as health_file:
+        health_file.write("Script 2 Health Status:\n")
+        health_file.write(f"Snort Running: {status['Snort Running']}\n")
+        health_file.write(f"Blacklisted IPs Exist: {status['Blacklisted IPs Exist']}\n")
+        health_file.write(f"Iptables Rules Configured: {status['Iptables Rules Configured']}\n")
+        health_file.write(f"Log File OK: {status['Log File OK']}\n")
+
+# Main function
+def main():
     try:
-        with open(blacklisted_ips_path, "r") as file:
-            for line in file:
-                ip = line.strip()
-                print(f"{ip} has been PortPwned")
-    except FileNotFoundError:
-        pass
+        snort_running = is_snort_running()
+        blacklisted_ips_exist = has_blacklisted_ips()
+        iptables_rules_configured = has_iptables_rules()
+        log_file_ok = is_script_log_file_ok()
 
-# Specify the path to your Snort alerts log file
-log_file_path = "/var/log/snort/snort.alert.fast"
+        script2_status = {
+            "Snort Running": snort_running,
+            "Blacklisted IPs Exist": blacklisted_ips_exist,
+            "Iptables Rules Configured": iptables_rules_configured,
+            "Log File OK": log_file_ok,
+        }
 
-# Call the function to parse the log
-parsed_entries = parse_snort_log(log_file_path)
+        # Write the health status to a file
+        write_script2_health_status(script2_status)
 
-# Print the parsed entries (or process them as needed)
-for entry in parsed_entries:
-    print("Timestamp:", entry['timestamp'])
-    print("Rule Information:", entry['rule_info'])
-    print("Classification:", entry['classification'])
-    print("=" * 50)  # Separating lines for readability
+        # Parse Snort logs and print the results
+        log_entries = parse_snort_log(log_file_path)
+        for entry in log_entries:
+            print(f"Timestamp: {entry['timestamp']}")
+            print(f"Rule Info: {entry['rule_info']}")
+            print(f"Classification: {entry['classification']}\n")
 
-# Print blacklisted IPs and their status
-print_blacklisted_ips()
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
 
-# Check the conditions and report PortPwned status
-if (
-    is_snort_running() and
-    has_blacklisted_ips() and
-    has_iptables_rules() and
-    is_script_log_file_ok()
-):
-    print("PortPwned Operational")
-else:
-    print("PortPwned Dysfunctional")
+if __name__ == "__main__":
+    main()
