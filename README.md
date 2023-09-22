@@ -4,4 +4,6 @@
 # when a script-kiddie fiddles your ports or boots up Kali just PortPwn them. 
 # ipaddress are saved for analysis,deletion or to cook up a parting gift. 
 # made by Ghostintheshell Hello friend | Goodbye friend 
-# Important you will have to configure snort and IP-Tables 
+# Important you should no longer have to dowload snort,iptables or ufw.
+# Configuration and rules should be automatic now
+# ASSUMING DEBIAN BASED APT PACKAGE MANAGED SYSTEMD SETUP!!!!!!!!!!!!
