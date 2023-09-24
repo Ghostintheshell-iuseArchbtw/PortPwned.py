@@ -182,4 +182,4 @@ if __name__ == "__main__":
     while True:
         main()
         logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-        time.sleep(WAIT_TIME_MINUTES) #Convert to seconds (minutes * 60 seconds)
+       time.sleep(WAIT_TIME_MINUTES * 60)
