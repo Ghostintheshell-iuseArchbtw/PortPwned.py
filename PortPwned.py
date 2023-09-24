@@ -14,11 +14,13 @@ BLACKLIST_FILE = "/etc/blacklisted_ips.txt"
 SCRIPT_SERVICE_NAME = "my_script.service"
 SNORT_SERVICE_NAME = "snort.service"
 IPTABLES_SERVICE_NAME = "iptables.service"
-LOG_FILE_PATH = "/var/log/script_log.txt"
 WAIT_TIME_MINUTES = 30
 
 # Initialize configuration parser
 config = configparser.ConfigParser()
+
+# Configure logging
+logging.basicConfig(filename="/var/log/script_log.txt", level=logging.INFO)
 
 # Function to create the configuration file with a template if it doesn't exist
 def create_config_file():
@@ -56,7 +58,7 @@ def parse_snort_logs():
     try:
         with open(SNORT_LOG_PATH, "r") as log_file:
             for line in log_file:
-                match = IP_PATTERN.search(line)
+                match = re.search(r"(\d+\.\d+\.\d+\.\d+)", line)
                 if match:
                     ip = match.group(1)
                     offending_ips.add(ip)
@@ -158,12 +160,6 @@ def display_blacklisted_ips(file_path):
 def main():
     create_config_file()  # Create the config file if it doesn't exist
 
-    # Read configuration values from the config file
-    config.read(CONFIG_FILE_PATH)
-
-    global IP_PATTERN
-    IP_PATTERN = re.compile(r"(\d+\.\d+\.\d+\.\d+)")
-
     try:
         # Check and configure Snort
         configure_and_start_snort()
@@ -182,4 +178,4 @@ if __name__ == "__main__":
     while True:
         main()
         logging.info(f"Waiting for {WAIT_TIME_MINUTES} minutes before the next run...")
-       time.sleep(WAIT_TIME_MINUTES * 60)
+        time.sleep(WAIT_TIME_MINUTES * 60)
