@@ -100,6 +100,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-     analysis_mode = input("Choose analysis mode ('all', 'info', 'stats', 'repeating', 'ascii', 'encoding'): ").lower() 
-     analyze_binary_data(file_path, analysis_mode)
