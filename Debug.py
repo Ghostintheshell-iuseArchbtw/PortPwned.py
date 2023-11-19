@@ -9,3 +9,4 @@ with open(data_file_path, 'rb') as file:
     detected_encoding = encoding_result['encoding']
 
 print(f"Detected encoding: {detected_encoding}")
+

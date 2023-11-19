@@ -86,3 +86,4 @@ if __name__ == "__main__":
     file_path = input("Enter the path to your binary file: ")  # Prompt the user for the binary file path
     analysis_mode = input("Choose analysis mode ('all', 'info', 'stats', 'repeating', 'ascii', 'encoding'): ").lower()
     analyze_binary_data(file_path, analysis_mode)
+

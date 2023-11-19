@@ -1,7 +1,6 @@
 import os
 import re
 import subprocess
-import time
 import logging
 import signal
 import sys
@@ -13,6 +12,108 @@ SNORT_LOG_PATH = "/var/log/snort/snort.log"
 BLACKLIST_FILE = "/etc/blacklisted_ips.txt"
 SCRIPT_SERVICE_NAME = "my_script.service"
 SNORT_SERVICE_NAME = "snort.service"
+IPTABLES_SERVICE_NAME = "iptables.service"
+LOG_FILE_PATH = "/var/log/script_log.txt"
+WAIT_TIME_MINUTES = 30
+IPTABLES_SERVICE_NAME = "iptables.service"
+LOG_FILE_PATH = "/var/log/script_log.txt"
+WAIT_TIME_MINUTES = 30
+
+# Initialize configuration parser
+config = configparser.ConfigParser()
+
+# Function to create the configuration file with a template if it doesn't exist
+def create_config_file():
+    if not os.path.exists(CONFIG_FILE_PATH):
+        config['Paths'] = {
+            'SNORT_LOG_PATH': SNORT_LOG_PATH,
+            'BLACKLIST_FILE': BLACKLIST_FILE,
+        }
+        config['Services'] = {
+            'SCRIPT_SERVICE_NAME': SCRIPT_SERVICE_NAME,
+            'SNORT_SERVICE_NAME': SNORT_SERVICE_NAME,
+            'IPTABLES_SERVICE_NAME': IPTABLES_SERVICE_NAME,
+        }
+        with open(CONFIG_FILE_PATH, 'w') as configfile:
+            config.write(configfile)
+
+# Function to gracefully stop services
+def stop_service(service_name):
+    try:
+        subprocess.run(["systemctl", "stop", service_name], check=True)
+        subprocess.run(["systemctl", "disable", service_name], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error stopping/disabling service {service_name}: {e}")
+
+# Function to handle script termination gracefully
+def handle_termination(signal, frame):
+    logging.info("Received termination signal. Stopping services and exiting gracefully.")
+    stop_service(SNORT_SERVICE_NAME)
+    stop_service(IPTABLES_SERVICE_NAME)
+    sys.exit(0)
+
+# Function to parse Snort logs and find offending IPs
+def parse_snort_logs():
+    offending_ips = set()
+    try:
+        with open(SNORT_LOG_PATH, "rb") as log_file:
+            for line in log_file:
+                line = line.decode('utf-8', errors='ignore')
+                match = IP_PATTERN.search(line)
+                if match:
+                    ip = match.group(1)
+                    offending_ips.add(ip)
+    except FileNotFoundError:
+        logging.error(f"Snort log file not found at {SNORT_LOG_PATH}")
+    return offending_ips
+
+# Function to load the previously blacklisted IPs
+def load_blacklisted_ips(file_path):
+    blacklisted_ips = set()
+    try:
+        with open(file_path, "r", encoding='utf-8') as file:
+            for line in file:
+                blacklisted_ips.add(line.strip())
+    except FileNotFoundError:
+        pass
+    except UnicodeDecodeError:
+        logging.error(f"Error decoding file at {file_path}")
+    return blacklisted_ips
+
+# Function to blacklist an IP using iptables
+def blacklist_ip(ip):
+    try:
+        subprocess.run(["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"], check=True)
+        logging.info(f"IP {ip} has been blacklisted.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error blacklisting IP {ip}: {e}")
+
+# Function to check if a systemd service is enabled and running
+def is_service_enabled_and_running(service_name):
+    try:
+        subprocess.run(["systemctl", "is-active", "--quiet", service_name], check=True)
+        subprocess.run(["systemctl", "is-enabled", "--quiet", service_name], check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+# Function to create a systemd service file if it doesn't exist
+def create_service_file(service_path, service_content):
+    if not os.path.exists(service_path):
+        with open(service_path, 'w') as service_file:
+            service_file.write(service_content)
+
+# Function to configure and start Snort in daemon mode
+def configure_and_start_snort():
+    # Check if Snort is installed
+    if not os.path.exists("/usr/sbin/snort"):
+        logging.info("Snort is not installed. Installing...")
+        subprocess.run(["apt", "update"], check=True)
+        subprocess.run(["apt", "install", "snort", "-y"], check=True)
+
+    # Check if Snort service is enabled and running
+    if not is_service_enabled_and_running(SNORT_SERVICE_NAME):
+        logging.info("Snort is not running as a daemon. Configuring and starting...")
 IPTABLES_SERVICE_NAME = "iptables.service"
 LOG_FILE_PATH = "/var/log/script_log.txt"
 WAIT_TIME_MINUTES = 30
