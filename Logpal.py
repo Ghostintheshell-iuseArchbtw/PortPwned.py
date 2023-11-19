@@ -1,7 +1,11 @@
 import re
 from datetime import datetime
 
-def parse_snort_log(log_file_path):
+class LogParsingError(Exception):
+    pass
+
+
+def parse_snort_log(log_file_path: str) -> list[dict]:
     parsed_entries = []
 
     try:
@@ -17,8 +21,8 @@ def parse_snort_log(log_file_path):
 
     return parsed_entries
 
-def parse_log_entry(log_entry):
-    entry_pattern = re.compile(r"^\[(.*?)\]\s*\[.*?\]\s*\[(.*?)\]\s*(.*)$")
+def parse_log_entry(log_entry: str) -> dict:
+    entry_pattern = re.compile(r"^\[(.*?)\]\s*\[(.*?)\]\s*\[(.*?)\]\s*(.*)$")
     match = entry_pattern.match(log_entry)
     
     if match:
@@ -32,22 +36,21 @@ def parse_log_entry(log_entry):
     
     return None
 
-def parse_timestamp(timestamp_str):
+def parse_timestamp(timestamp_str: str) -> datetime:
     try:
         return datetime.strptime(timestamp_str, "%m/%d-%H:%M:%S.%f")
     except ValueError:
-        # Handle parsing error, return None or raise an exception as needed
-        return None
+        raise LogParsingError("Failed to parse timestamp")
 
 # Specify the path to your Snort alerts log file
-log_file_path = "/var/log/snort/snort.alert.fast"
+snort_log_file_path = "/var/log/snort/snort.alert.fast"
 
 # Call the function to parse the log
-parsed_entries = parse_snort_log(log_file_path)
+parsed_entries = parse_snort_log(snort_log_file_path)
 
 # Print the parsed entries
 for entry in parsed_entries:
-    print("Timestamp:", entry['timestamp'])
-    print("Rule Information:", entry['rule_info'])
-    print("Classification:", entry['classification'])
+    print(f"Timestamp: {entry['timestamp']}")
+    print(f"Rule Information: {entry['rule_info']}")
+    print(f"Classification: {entry['classification']}")
     print("=" * 50)  # Separating lines for readability
